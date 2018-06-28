@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" class="has-navbar-fixed-top">
+
+<head runat="server">
+    <title></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.1/css/bulma.css" />
+    <script src="https://apis.google.com/js/api.js"></script>
+</head>
+
+<body>
+
+    <section class="section">
+        <div class="container is-flex">
+            <nav  id="navplayer" class="navbar is-transparent is-fixed-top is-hidden">
+                <div class="navbar-item" style="width: 100%">
+                    <div class="columns is-mobile" style="margin:-0.75rem 0;width:100%;">
+                        <div class="column  field has-addons">
+                            <div class="control is-expanded">
+                                <input type="text" id="movieID" class="input is-fullwidth" placeholder="Canal ou nome do video"  onkeypress="doEnter(event)">
+                            </div>
+                            <div class="control">
+                                <a href="#" class="button is-info" onclick="Search()">Pesquisar</a>
+                            </div>
+                        </div>
+                        <div id="toggleModal" class="column is-2 field">
+                            <div class="control is-expanded">
+                                <a class="button is-default is-fullwidth" href="#toggleModal" onclick="toggle(true)"> Show Modal</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </nav>
+        </div>
+
+    <div class="container is-fluid">
+        <div class="columns is-multiline is-mobile" id="movies"></div>
+    </div>
+    <div class="control is-expanded">
+        <a id="loadNext" class="button is-default is-fullwidth is-hidden" href="#loadNext" onclick="LoadNext()"> CARREGAR MAIS... </a>
+    </div>
+    <div class="modal" id="playerVideo">
+        <div class="modal-background"></div>
+        <div class="modal-content" style="width:90%;overflow: hidden;">
+            <div style="width:100%;height:100%;padding-top:56%;background: #000;" id="areaVideo"></div>
+        </div>
+        <button class="modal-close is-large" aria-label="close" onclick="toggle(false)"></button>
+    </div>
+
+    </section>
+
+    <script>
+
+        // GENERATE KEY ON = https://console.developers.google.com/apis
+        //var GOOGLE_API_KEY = 'GENERATE YOUR API KEY';
+        var GOOGLE_API_KEY = 'GOOGLE_API_KEY';
+
+        var isLoading = false;
+
+        var sampleData =  null;
+        
+
+        var _movieID = '';
+        var tableID = 'listMovies';
+        var iframe = {}
+
+        var elPrevID = 'loadPrev';
+        var elNextID = 'loadNext';
+        var elToggleMovie = 'toggleModal';
+
+        var pageToken = '';
+        var prevPageToken = '';
+        var nextPageToken = '';
+
+        function doEnter(e) {
+            if(e.which == 13 || e.keyCode == 13 ) {
+                this.Search();
+                //return false;
+            }
+            //return true;
+        }
+
+
+        function SetDisplay(selectorID, value) {
+
+            if(value === true) {
+                document.getElementById(selectorID).classList.remove('is-hidden')
+            }
+            else if (value === false) {
+                document.getElementById(selectorID).classList.add('is-hidden')
+            }
+            else
+            {
+                document.getElementById(selectorID).style.display = value;
+            }
+        }
+
+
+        function ClearTable() {
+            document.querySelector('#listMovies').innerHTML = '';
+            nextPageToken = '';
+            prevPageToken = '';
+        }
+
+
+        function SetNextPageToken(value) {
+            nextPageToken = value.nextPageToken ? value.nextPageToken : '';
+            //SetDisplay(elNextID, nextPageToken.length > 0 ? 'block' : 'none');
+            SetDisplay(elNextID, nextPageToken.length > 0);
+        }
+
+
+        function SetPrevPageToken(value) {
+            prevPageToken = value.prevPageToken ? value.prevPageToken : '';
+            //SetDisplay(elPrevID, prevPageToken.length > 0 ? 'is-hidden' : 'none');
+            SetDisplay(elPrevID, prevPageToken.length > 0);
+        }
+
+
+        function GetPageToken() {
+            return pageToken;
+        }
+
+        /** Return the value of input text movie
+         * @return {string}
+         */
+        function GetMovieID() {
+            var movieID = document.getElementById('movieID')
+
+            if(movieID) { return movieID.value.trim(); }
+
+            return '';
+        }
+
+
+        function loadClient() {
+
+            if(GOOGLE_API_KEY==='GOOGLE_API_KEY') {
+                document.querySelector('#movies').innerHTML = `
+                    <h3 class="title">
+                        Please create API_KEY on <a href="https://console.developers.google.com/apis">https://console.developers.google.com/apis</a> and put in this source code.
+                    </h3>`;
+                    return;
+            }
+
+            gapi.client.setApiKey(GOOGLE_API_KEY);
+
+            var returnOk = function () {
+                console.log("GAPI client loaded for API");
+                SetDisplay('navplayer', true);
+            }
+
+            var returnError = function (err) {
+                console.error("Error loading GAPI client for API", err);
+            }
+
+            return gapi.client.load("https://content.googleapis.com/discovery/v1/apis/youtube/v3/rest").then(returnOk,
+                returnError);
+        }
+
+
+        function LoadNext() {
+            this.pageToken = this.nextPageToken;
+            this.Search();
+        }
+
+
+        function LoadPrev() {
+            this.pageToken = this.prevPageToken;
+            this.Search();
+        }
+
+        /**
+         * Check if initialize the search.
+         * @return {boolean}
+         */
+        function InitSearch() {
+
+            if (isLoading) return false;
+
+            var movieID = this.GetMovieID();
+            if (movieID.length == 0) return false;
+
+            isLoading = true;
+
+            if (this._movieID != movieID) {
+
+                document.querySelector('#movies').innerHTML = '';
+                nextPage = '';
+            }
+            this._movieID = movieID;
+
+            return true;
+        }
+
+        // Make sure the client is loaded before calling this method.
+        function Search() {
+
+            if (sampleData){
+                returnOk({result:sampleData});
+                return;
+            }
+
+            if (!InitSearch()) return;
+
+            var query = {
+                part: 'id,snippet',
+                order: 'date',
+                maxResults: 25,
+                q: this.GetMovieID(),
+                pageToken: this.GetPageToken()
+            };
+
+
+
+            function returnOk(response) {
+                console.log("Response", response);
+
+                var data = response.result;
+
+                if (data == null || data == undefined) return;
+
+                this.SetNextPageToken(data)
+                //this.SetPrevPageToken(data)
+
+                for (var i = 0, t = data.items.length; i < t; i++) {
+                    item = data.items[i];
+                    movie = item.snippet;
+
+                    var item = ({
+                        id: item.id.videoId,
+                        canal: movie.channelTitle,
+                        desc: movie.description,
+                        titulo: movie.title,
+                        data: movie.publishedAt,
+                        imgUrl: movie.thumbnails.default.url,
+                        imgW: movie.thumbnails.default.width,
+                        imgH: movie.thumbnails.default.height,
+                    });
+
+                    AddItem(item);
+                }
+
+                isLoading = false;
+
+            }
+
+            function returnError(err) {
+                console.error("Execute error", err);
+                isLoading = false;
+            }
+
+            return gapi.client.youtube.search.list(query).then(returnOk, returnError);
+        }
+
+
+        function AddItem(item) {
+
+            var html =
+                `
+<div class="columns">
+    <div class="column is-4" id=${item.id}>
+        <figure class="image is-3by2">
+            <img src="${item.imgUrl}" width="${item.imgW}" height="${item.imgH}" />
+        </figure>
+        <div class="columns is-gapless is-mobile">
+            <div class="column is-8">
+                <div class="control is-expanded">
+                    <a class="button is-radiusless is-small is-danger is-fullwidth" href='#${item.id}' onclick='Show("${item.id}",0)'>download</a>
+                </div>
+            </div>
+            <div class="column is-4">
+                <div class="control is-expanded">
+                    <a class="button is-radiusless is-small is-info is-fullwidth" href='#${item.id}' onclick='Show("${item.id}",1)'>play</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="column is-8">
+        <div class="content is-small">
+            <p class="title is-spaced is-7">${item.titulo}</p>
+            <span class="subtitle is-7">${item.canal}</span>
+            <span> - ${new Date(item.data).toLocaleString()}</span>
+            <p class="is-small">http://www.youtube.com/v/${item.id}</p>
+        </div>
+    </div>
+</div>
+        `;
+
+            var div = document.createElement('div');
+            div.classList.add('column','is-6')
+            div.innerHTML = html;
+            document.querySelector('#movies').appendChild(div);
+        }
+
+
+        function Show(movie, action = 1) {
+
+            toggle(true);
+
+            var areaVideo = document.querySelector("#areaVideo");
+            areaVideo.innerHTML = "";
+
+            iframe = document.createElement('iframe');
+            iframe.type = 'text/html';
+            iframe.id = 'player';
+            iframe.width = '100%';
+            iframe.height = '100%';
+            iframe.style='position:absolute;top:0;bottom:0;left:0;right:0'
+
+            if (action == 1) {
+                // video player
+                iframe.src = `http://www.youtube.com/embed/${movie}?&origin=http://localhost`;
+                
+            } else {
+                // downloader
+                iframe.src = `https://y2mate.com/pt/youtube/${movie}`
+                iframe.src = `https://youtubepp.com/watch?v=${movie}`
+            }
+            iframe.frameBorder = 0;
+            areaVideo.appendChild(iframe);
+        }
+
+
+        function toggle(value) {
+
+            var pv = document.querySelector('#playerVideo');
+            if (value) { pv.classList.add('is-active'); }
+            else { pv.classList.remove('is-active'); }
+        }
+
+        gapi.load("client", loadClient);
+
+    </script>
+
+
+</body>
+</html>
